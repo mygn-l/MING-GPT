@@ -1,6 +1,10 @@
 import numpy as np
 import math
 
+from Regularizer import Normalize_Factor, Dropout, KEEP_PROB
+from Activation import Softmax, Softmax_derivative
+from Adam import Adam
+
 class Attention:
     def __init__(self, num_head, dim_head, dim_vector, dim_query):
         self.type = "attention"
@@ -12,13 +16,23 @@ class Attention:
 
         self.heads = [
             [
-                np.random.rand(dim_vector, dim_query), #query
-                np.random.rand(dim_vector, dim_query), #key
-                np.random.rand(dim_vector, dim_head) #value
+                np.random.rand(dim_vector, dim_query) * 0.02 - 0.04, #query
+                np.random.rand(dim_vector, dim_query) * 0.02 - 0.04, #key
+                np.random.rand(dim_vector, dim_head) * 0.02 - 0.04 #value
             ]
             for i in range(num_head)
         ] #hope it's not pass-by-reference
-        self.output_matrix = np.random.rand(dim_head * num_head, dim_vector)
+        self.output_matrix = np.random.rand(dim_head * num_head, dim_vector) * 0.02 - 0.04
+
+        self.query_m_prev = [np.zeros((dim_vector, dim_query)) for i in range(num_head)]
+        self.query_v_prev = [np.zeros((dim_vector, dim_query)) for i in range(num_head)]
+        self.key_m_prev = [np.zeros((dim_vector, dim_query)) for i in range(num_head)]
+        self.key_v_prev = [np.zeros((dim_vector, dim_query)) for i in range(num_head)]
+        self.value_m_prev = [np.zeros((dim_vector, dim_head)) for i in range(num_head)]
+        self.value_v_prev = [np.zeros((dim_vector, dim_head)) for i in range(num_head)]
+
+        self.Wo_m_prev = np.zeros((dim_head * num_head, dim_vector))
+        self.Wo_v_prev = np.zeros((dim_head * num_head, dim_vector))
 
     def forward_train(self, input_vectors):
         self.input_vectors = input_vectors
@@ -47,13 +61,13 @@ class Attention:
             pre = QKT * self.scaling_factor
 
             # softmax each vector
-            act = np.empty(pre.shape)
+            act = np.zeros(pre.shape)
             for j in range(pre.shape[0]):
-                pre[j, 0 : j+1] = pre[j, 0 : j+1] - np.max(pre[j, 0 : j+1])
-                exps = np.exp(pre[j, 0 : j+1])
-                act[j, 0 : j+1] = exps * (1 / np.sum(exps))
-                act[j, j+1 :] = 0
+                pre[j, 0 : j+1] -= np.max(pre[j, 0 : j+1])
+                act[j, 0 : j+1] = Softmax(pre[j, 0 : j+1])
             self.act.append(act)
+
+            act = Dropout(act)
 
             ATTENTION = np.matmul(act, V)
 
@@ -84,12 +98,12 @@ class Attention:
             dC_dV = np.matmul(np.transpose(self.act[i]), dC_dHsplit)
             dC_dWv = np.matmul(np.transpose(self.input_vectors), dC_dV)
 
-            dC_dact = np.matmul(dC_dHsplit, np.transpose(self.V[i]))
+            dC_dact = np.matmul(dC_dHsplit, np.transpose(self.V[i])) / KEEP_PROB
 
             dC_dpre = np.empty(dC_dact.shape)
             for j in range(dC_dpre.shape[0]):
-                act_vector = self.act[i][j, :]
-                dC_dpre[j, :] = np.sum(np.diagflat(act_vector) - np.outer(act_vector * dC_dact[j, :], act_vector), axis=0)
+                dact_dpre = Softmax_derivative(self.act[i][j, :])
+                dC_dpre[j, :] = np.sum(dact_dpre * dC_dact[j, :], axis=1)
 
             dC_dQKT = dC_dpre * self.scaling_factor
 
@@ -101,24 +115,33 @@ class Attention:
             dC_dWk = np.matmul(np.transpose(self.input_vectors), dC_dK)
 
             # product rule
-            dC_dX = dC_dX + np.matmul(dC_dV, np.transpose(Wvd))
-            dC_dX = dC_dX + np.matmul(dC_dQ, np.transpose(Wq))
-            dC_dX = dC_dX + np.matmul(dC_dK, np.transpose(Wk))
+            dC_dX += np.matmul(dC_dV, np.transpose(Wvd))
+            dC_dX += np.matmul(dC_dQ, np.transpose(Wq))
+            dC_dX += np.matmul(dC_dK, np.transpose(Wk))
 
-            # update at the end
-            bruh = (1 / np.sum(dC_dWq)) if np.sum(dC_dWq) != 0 else 1
-            self.heads[i][0] = self.heads[i][0] - dC_dWq * LEARNING_RATE * abs(bruh)
-            bruh = (1 / np.sum(dC_dWk)) if np.sum(dC_dWk) != 0 else 1
-            self.heads[i][1] = self.heads[i][1] - dC_dWk * LEARNING_RATE * abs(bruh)
-            bruh = (1 / np.sum(dC_dWv)) if np.sum(dC_dWv) != 0 else 1
-            self.heads[i][2] = self.heads[i][2] - dC_dWv * LEARNING_RATE * abs(bruh)
+            # update only at the end
+            query_adam = Adam(dC_dWq, self.query_m_prev[i], self.query_v_prev[i], LEARNING_RATE)
+            self.heads[i][0] += query_adam[0]
+            self.query_m_prev[i] = query_adam[1]
+            self.query_v_prev[i] = query_adam[2]
 
-        # update at the end
-        bruh = (1 / np.sum(dC_dWo)) if np.sum(dC_dWo) != 0 else 1
-        self.output_matrix = self.output_matrix - dC_dWo * LEARNING_RATE * abs(bruh)
+            key_adam = Adam(dC_dWk, self.key_m_prev[i], self.key_v_prev[i], LEARNING_RATE)
+            self.heads[i][1] += key_adam[0]
+            self.key_m_prev[i] = key_adam[1]
+            self.key_v_prev[i] = key_adam[2]
 
-        bruh = (1 / np.sum(dC_dX)) if np.sum(dC_dX) != 0 else 1
-        dC_dX = dC_dX * bruh
+            value_adam = Adam(dC_dWv, self.value_m_prev[i], self.value_v_prev[i], LEARNING_RATE)
+            self.heads[i][2] += value_adam[0]
+            self.value_m_prev[i] = value_adam[1]
+            self.value_v_prev[i] = value_adam[2]
+
+        # update only at the end
+        output_adam = Adam(dC_dWo, self.Wo_m_prev, self.Wo_v_prev, LEARNING_RATE)
+        self.output_matrix += output_adam[0]
+        self.Wo_m_prev = output_adam[1]
+        self.Wo_v_prev = output_adam[2]
+
+        dC_dX *= Normalize_Factor(dC_dX)
         #NORMALIZED
 
         return dC_dX

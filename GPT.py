@@ -6,9 +6,11 @@ import numpy as np
 
 from Tokenizer import Tokenizer
 from Transformer import Transformer
+from Cost import Cross_Entropy_Back
+from Layer_Normalization import Layer_Normalization
 
 DIRECTORY = "MING-GPT"
-LEARNING_RATE = 0.1
+LEARNING_RATE = 0.001
 
 class GPT:
     def __init__(self):
@@ -21,6 +23,8 @@ class GPT:
         self.transformer5 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
         self.transformer6 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
 
+        self.last_layer_normalizer = Layer_Normalization(num_tokens=8)
+
         self.layers = [self.transformer1, self.transformer2, self.transformer3, self.transformer4, self.transformer5, self.transformer6]
 
     def forward_train(self, text):
@@ -29,15 +33,18 @@ class GPT:
         transformed = input_vectors.copy()
         for i in range(len(self.layers)):
             transformed = self.layers[i].forward_train(transformed)
+        
+        transformed = self.last_layer_normalizer.forward_train(transformed)
 
         chosen_token = self.tokenizer.unembed_train(transformed)
 
         return chosen_token
 
     def backward(self, expected_last_word):
-        dC_dX = self.tokenizer.backward_unembed_crossentropy(expected_last_word, LEARNING_RATE)
+        dC_dX = self.tokenizer.backward_unembed(expected_last_word, LEARNING_RATE, Cross_Entropy_Back)
 
-        current_dC_dX = dC_dX.copy()
+        current_dC_dX = self.last_layer_normalizer.backward(dC_dX, LEARNING_RATE)
+
         for i in reversed(range(len(self.layers))):
             current_dC_dX = self.layers[i].backward(current_dC_dX, LEARNING_RATE)
 
@@ -65,10 +72,15 @@ class GPT:
                         np.savetxt(DIRECTORY + "/query" + str(i) + str(j) + ".out", layer.attention.heads[j][0])
                         np.savetxt(DIRECTORY + "/key" + str(i) + str(j) + ".out", layer.attention.heads[j][1])
                         np.savetxt(DIRECTORY + "/value" + str(i) + str(j) + ".out", layer.attention.heads[j][2])
+                    np.savetxt(DIRECTORY + "/output" + str(i) + ".out", layer.attention.output_matrix)
                     for j in range(layer.multilayer_feedforward.num_layers):
                         for k in range(len(layer.multilayer_feedforward.dims) - 1):
                             np.savetxt(DIRECTORY + "/weights" + str(i) + str(j) + str(k) + ".out", layer.multilayer_feedforward.layers[j].weights[k])
                             np.savetxt(DIRECTORY + "/biases" + str(i) + str(j) + str(k) + ".out", layer.multilayer_feedforward.layers[j].biases[k])
+                    np.savetxt(DIRECTORY + "/gamma" + str(i) + "1.out", layer.layer_normalizer1.GAMMA)
+                    np.savetxt(DIRECTORY + "/beta" + str(i) + "1.out", layer.layer_normalizer1.BETA)
+                    np.savetxt(DIRECTORY + "/gamma" + str(i) + "2.out", layer.layer_normalizer2.GAMMA)
+                    np.savetxt(DIRECTORY + "/beta" + str(i) + "2.out", layer.layer_normalizer2.BETA)
 
     def load_layers(self):
         DIRECTORY = "MING-GPT"
@@ -87,26 +99,27 @@ class GPT:
                         layer.attention.heads[j][0] = np.loadtxt(DIRECTORY + "/query" + str(i) + str(j) + ".out")
                         layer.attention.heads[j][1] = np.loadtxt(DIRECTORY + "/key" + str(i) + str(j) + ".out")
                         layer.attention.heads[j][2] = np.loadtxt(DIRECTORY + "/value" + str(i) + str(j) + ".out")
+                    layer.attention.output_matrix = np.loadtxt(DIRECTORY + "/output" + str(i) + ".out")
                     for j in range(layer.multilayer_feedforward.num_layers):
                         for k in range(len(layer.multilayer_feedforward.dims) - 1):
                             layer.multilayer_feedforward.layers[j].weights[k] = np.loadtxt(DIRECTORY + "/weights" + str(i) + str(j) + str(k) + ".out")
                             layer.multilayer_feedforward.layers[j].biases[k] = np.loadtxt(DIRECTORY + "/biases" + str(i) + str(j) + str(k) + ".out")
+                    layer.layer_normalizer1.GAMMA = np.loadtxt(DIRECTORY + "/gamma" + str(i) + "1.out")
+                    layer.layer_normalizer1.BETA = np.loadtxt(DIRECTORY + "/beta" + str(i) + "1.out")
+                    layer.layer_normalizer2.GAMMA = np.loadtxt(DIRECTORY + "/gamma" + str(i) + "2.out")
+                    layer.layer_normalizer2.BETA = np.loadtxt(DIRECTORY + "/beta" + str(i) + "2.out")
 
     def train_on_text(self, path):
-        text = open(path).read().lower().replace(".", " ").replace(",", " ").replace("!", " ").replace("?", " ").replace("’", " ").replace("-", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace('"', " ").replace("'", " ")
+        text = open(path).read().lower().replace(".", " . ").replace(",", " , ").replace("!", " ! ").replace("?", " ? ").replace("’", " ’ ").replace("-", " - ").replace(":", " : ").replace(";", " ; ").replace("(", " ( ").replace(")", " ) ").replace('"', ' " ').replace("'", " ' ")
         words = text.split()
-
-        start = time.time()
 
         for i in range(1, len(words)):
             self.forward_train(" ".join(words[0 : i]))
             self.backward(words[i])
-            time.sleep(0.3)
-            print("Trained word")
 
-        end = time.time()
-
-        print(f"Trained {len(words)} words in: {end - start} seconds")
+            if i % 10 == 0:
+                print(self.generate_from_text("I ", 10))
+                print(np.diagonal(self.layers[0].attention.heads[0][0]))
 
     def generate_from_text(self, input_text, iterations):
         output_text = input_text
@@ -117,8 +130,7 @@ class GPT:
 gpt_network = GPT()
 if os.path.isdir("./MING-GPT"):
     gpt_network.load_layers()
-#print("Started training")
-for i in range(1):
-    #gpt_network.train_on_text("./train-text.txt")
+for i in range(10):
+    gpt_network.train_on_text("./train-text.txt")
     print(gpt_network.generate_from_text("I", 100))
-    #gpt_network.save_layers()
+    gpt_network.save_layers()
