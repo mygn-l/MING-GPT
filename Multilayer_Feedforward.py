@@ -13,8 +13,8 @@ class Multilayer_Feedforward:
             output_vectors[i, :] = self.layers[i].forward_train(input_vectors[i, :])
         return output_vectors
 
-    def backward(self, dC_dY, LEARNING_RATE):
+    def backward(self, dC_dY):
         dC_dX = np.empty((self.num_layers, self.dims[0]))
         for i in range(self.num_layers):
-            dC_dX[i, :] = self.layers[i].backward(dC_dY[i, :], LEARNING_RATE)
+            dC_dX[i, :] = self.layers[i].backward(dC_dY[i, :])
         return dC_dX

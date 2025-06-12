@@ -1,9 +1,10 @@
 import numpy as np
 
-def Softmax(vector):
-    exps = np.exp(vector)
-    prob_dist = exps * (1 / np.sum(exps))
-    return prob_dist
+def Softmax(vectors):
+    maxes = np.max(vectors, axis=1)
+    dividend = np.exp(vectors - maxes.reshape((-1, 1)))
+    divisor = np.sum(dividend, axis=1)
+    return dividend / divisor.reshape((-1, 1))
 
 def Softmax_derivative(S):
     return np.diagflat(S) - np.outer(S, S)

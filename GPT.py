@@ -1,31 +1,33 @@
 import json
 import os
-import time
 
 import numpy as np
 
 from Tokenizer import Tokenizer
 from Transformer import Transformer
-from Cost import Cross_Entropy_Back
 from Layer_Normalization import Layer_Normalization
-
-DIRECTORY = "MING-GPT"
-LEARNING_RATE = 0.001
+from config import SAVE_PATH
 
 class GPT:
     def __init__(self):
-        self.tokenizer = Tokenizer(num_tokens=8, dim_input_vector=128, dim_output_vector=128)
+        DIM_INPUT_VECTOR = 256
+        NUM_HEAD = 4
+        DIM_HEAD = 64
+        NUM_TOKENS = 4
+        DIM_QUERY = 32
 
-        self.transformer1 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
-        self.transformer2 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
-        self.transformer3 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
-        self.transformer4 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
-        self.transformer5 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
-        self.transformer6 = Transformer(num_tokens=8, num_head=8, dim_head=16, dim_input_vector=128, dim_query=8, feedforward_dims=[128, 512, 128])
+        self.tokenizer = Tokenizer(num_tokens=NUM_TOKENS, dim_input_vector=DIM_INPUT_VECTOR, dim_output_vector=DIM_INPUT_VECTOR)
 
-        self.last_layer_normalizer = Layer_Normalization(num_tokens=8)
+        self.last_layer_normalizer = Layer_Normalization(num_tokens=NUM_TOKENS)
 
-        self.layers = [self.transformer1, self.transformer2, self.transformer3, self.transformer4, self.transformer5, self.transformer6]
+        self.layers = [
+            Transformer(num_tokens=NUM_TOKENS, num_head=NUM_HEAD, dim_head=DIM_HEAD, dim_input_vector=DIM_INPUT_VECTOR, dim_query=DIM_QUERY, feedforward_dims=[DIM_INPUT_VECTOR, 4 * DIM_INPUT_VECTOR, DIM_INPUT_VECTOR]),
+            Transformer(num_tokens=NUM_TOKENS, num_head=NUM_HEAD, dim_head=DIM_HEAD, dim_input_vector=DIM_INPUT_VECTOR, dim_query=DIM_QUERY, feedforward_dims=[DIM_INPUT_VECTOR, 4 * DIM_INPUT_VECTOR, DIM_INPUT_VECTOR]),
+            Transformer(num_tokens=NUM_TOKENS, num_head=NUM_HEAD, dim_head=DIM_HEAD, dim_input_vector=DIM_INPUT_VECTOR, dim_query=DIM_QUERY, feedforward_dims=[DIM_INPUT_VECTOR, 4 * DIM_INPUT_VECTOR, DIM_INPUT_VECTOR]),
+            Transformer(num_tokens=NUM_TOKENS, num_head=NUM_HEAD, dim_head=DIM_HEAD, dim_input_vector=DIM_INPUT_VECTOR, dim_query=DIM_QUERY, feedforward_dims=[DIM_INPUT_VECTOR, 4 * DIM_INPUT_VECTOR, DIM_INPUT_VECTOR]),
+            Transformer(num_tokens=NUM_TOKENS, num_head=NUM_HEAD, dim_head=DIM_HEAD, dim_input_vector=DIM_INPUT_VECTOR, dim_query=DIM_QUERY, feedforward_dims=[DIM_INPUT_VECTOR, 4 * DIM_INPUT_VECTOR, DIM_INPUT_VECTOR]),
+            Transformer(num_tokens=NUM_TOKENS, num_head=NUM_HEAD, dim_head=DIM_HEAD, dim_input_vector=DIM_INPUT_VECTOR, dim_query=DIM_QUERY, feedforward_dims=[DIM_INPUT_VECTOR, 4 * DIM_INPUT_VECTOR, DIM_INPUT_VECTOR]),
+        ]
 
     def forward_train(self, text):
         input_vectors = self.tokenizer.embed_train(text)
@@ -41,73 +43,71 @@ class GPT:
         return chosen_token
 
     def backward(self, expected_last_word):
-        dC_dX = self.tokenizer.backward_unembed(expected_last_word, LEARNING_RATE, Cross_Entropy_Back)
+        dC_dX = self.tokenizer.backward_unembed(expected_last_word)
 
-        current_dC_dX = self.last_layer_normalizer.backward(dC_dX, LEARNING_RATE)
+        current_dC_dX = self.last_layer_normalizer.backward(dC_dX)
 
         for i in reversed(range(len(self.layers))):
-            current_dC_dX = self.layers[i].backward(current_dC_dX, LEARNING_RATE)
+            current_dC_dX = self.layers[i].backward(current_dC_dX)
 
-        self.tokenizer.backward_embed(current_dC_dX, LEARNING_RATE)
+        self.tokenizer.backward_embed(current_dC_dX)
 
     def save_layers(self):
         try:
-            os.mkdir(DIRECTORY)
-            print("Directory created successfully.")
+            os.mkdir(SAVE_PATH)
+            print(f"Folder {SAVE_PATH} created successfully.")
         except:
             print("")
 
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
-
-            match layer.type:
-                case "tokenizer":
-                    np.savetxt(DIRECTORY + "/embedding.out", layer.embedding_matrix)
-                    np.savetxt(DIRECTORY + "/unembedding.out", layer.unembedding_matrix)
-                    with open(DIRECTORY + "/vocabulary.json", "w") as file:
-                        file.write(json.dumps(layer.vocabulary))
-
-                case "transformer":
-                    for j in range(layer.attention.num_head):
-                        np.savetxt(DIRECTORY + "/query" + str(i) + str(j) + ".out", layer.attention.heads[j][0])
-                        np.savetxt(DIRECTORY + "/key" + str(i) + str(j) + ".out", layer.attention.heads[j][1])
-                        np.savetxt(DIRECTORY + "/value" + str(i) + str(j) + ".out", layer.attention.heads[j][2])
-                    np.savetxt(DIRECTORY + "/output" + str(i) + ".out", layer.attention.output_matrix)
-                    for j in range(layer.multilayer_feedforward.num_layers):
-                        for k in range(len(layer.multilayer_feedforward.dims) - 1):
-                            np.savetxt(DIRECTORY + "/weights" + str(i) + str(j) + str(k) + ".out", layer.multilayer_feedforward.layers[j].weights[k])
-                            np.savetxt(DIRECTORY + "/biases" + str(i) + str(j) + str(k) + ".out", layer.multilayer_feedforward.layers[j].biases[k])
-                    np.savetxt(DIRECTORY + "/gamma" + str(i) + "1.out", layer.layer_normalizer1.GAMMA)
-                    np.savetxt(DIRECTORY + "/beta" + str(i) + "1.out", layer.layer_normalizer1.BETA)
-                    np.savetxt(DIRECTORY + "/gamma" + str(i) + "2.out", layer.layer_normalizer2.GAMMA)
-                    np.savetxt(DIRECTORY + "/beta" + str(i) + "2.out", layer.layer_normalizer2.BETA)
-
-    def load_layers(self):
-        DIRECTORY = "MING-GPT"
+        np.savetxt(SAVE_PATH + "/embedding.out", self.tokenizer.embedding_matrix)
+        np.savetxt(SAVE_PATH + "/unembedding.out", self.tokenizer.unembedding_matrix)
+        with open(SAVE_PATH + "/vocabulary.json", "w") as file:
+            file.write(json.dumps(self.tokenizer.vocabulary))
 
         for i in range(len(self.layers)):
             layer = self.layers[i]
 
             match layer.type:
-                case "tokenizer":
-                    layer.embedding_matrix = np.loadtxt(DIRECTORY + "/embedding.out")
-                    layer.unembedding_matrix = np.loadtxt(DIRECTORY + "/unembedding.out")
-                    layer.vocabulary = json.loads(open(DIRECTORY + "/vocabulary.json").read())
-
                 case "transformer":
                     for j in range(layer.attention.num_head):
-                        layer.attention.heads[j][0] = np.loadtxt(DIRECTORY + "/query" + str(i) + str(j) + ".out")
-                        layer.attention.heads[j][1] = np.loadtxt(DIRECTORY + "/key" + str(i) + str(j) + ".out")
-                        layer.attention.heads[j][2] = np.loadtxt(DIRECTORY + "/value" + str(i) + str(j) + ".out")
-                    layer.attention.output_matrix = np.loadtxt(DIRECTORY + "/output" + str(i) + ".out")
+                        np.savetxt(SAVE_PATH + "/query" + str(i) + str(j) + ".out", layer.attention.heads[j][0])
+                        np.savetxt(SAVE_PATH + "/key" + str(i) + str(j) + ".out", layer.attention.heads[j][1])
+                        np.savetxt(SAVE_PATH + "/value" + str(i) + str(j) + ".out", layer.attention.heads[j][2])
+                    np.savetxt(SAVE_PATH + "/output" + str(i) + ".out", layer.attention.output_matrix)
                     for j in range(layer.multilayer_feedforward.num_layers):
                         for k in range(len(layer.multilayer_feedforward.dims) - 1):
-                            layer.multilayer_feedforward.layers[j].weights[k] = np.loadtxt(DIRECTORY + "/weights" + str(i) + str(j) + str(k) + ".out")
-                            layer.multilayer_feedforward.layers[j].biases[k] = np.loadtxt(DIRECTORY + "/biases" + str(i) + str(j) + str(k) + ".out")
-                    layer.layer_normalizer1.GAMMA = np.loadtxt(DIRECTORY + "/gamma" + str(i) + "1.out")
-                    layer.layer_normalizer1.BETA = np.loadtxt(DIRECTORY + "/beta" + str(i) + "1.out")
-                    layer.layer_normalizer2.GAMMA = np.loadtxt(DIRECTORY + "/gamma" + str(i) + "2.out")
-                    layer.layer_normalizer2.BETA = np.loadtxt(DIRECTORY + "/beta" + str(i) + "2.out")
+                            np.savetxt(SAVE_PATH + "/weights" + str(i) + str(j) + str(k) + ".out", layer.multilayer_feedforward.layers[j].weights[k])
+                            np.savetxt(SAVE_PATH + "/biases" + str(i) + str(j) + str(k) + ".out", layer.multilayer_feedforward.layers[j].biases[k])
+                    np.savetxt(SAVE_PATH + "/gamma" + str(i) + "1.out", layer.layer_normalizer1.GAMMA)
+                    np.savetxt(SAVE_PATH + "/beta" + str(i) + "1.out", layer.layer_normalizer1.BETA)
+                    np.savetxt(SAVE_PATH + "/gamma" + str(i) + "2.out", layer.layer_normalizer2.GAMMA)
+                    np.savetxt(SAVE_PATH + "/beta" + str(i) + "2.out", layer.layer_normalizer2.BETA)
+
+    def load_layers_if_exist(self):
+        if not os.path.isdir(SAVE_PATH):
+            return
+
+        self.tokenizer.embedding_matrix = np.loadtxt(SAVE_PATH + "/embedding.out")
+        self.tokenizer.unembedding_matrix = np.loadtxt(SAVE_PATH + "/unembedding.out")
+        self.tokenizer.vocabulary = json.loads(open(SAVE_PATH + "/vocabulary.json").read())
+
+        for i in range(len(self.layers)):
+
+            match self.layers[i].type:
+                case "transformer":
+                    for j in range(self.layers[i].attention.num_head):
+                        self.layers[i].attention.heads[j][0] = np.loadtxt(SAVE_PATH + "/query" + str(i) + str(j) + ".out")
+                        self.layers[i].attention.heads[j][1] = np.loadtxt(SAVE_PATH + "/key" + str(i) + str(j) + ".out")
+                        self.layers[i].attention.heads[j][2] = np.loadtxt(SAVE_PATH + "/value" + str(i) + str(j) + ".out")
+                    self.layers[i].attention.output_matrix = np.loadtxt(SAVE_PATH + "/output" + str(i) + ".out")
+                    for j in range(self.layers[i].multilayer_feedforward.num_layers):
+                        for k in range(len(self.layers[i].multilayer_feedforward.dims) - 1):
+                            self.layers[i].multilayer_feedforward.layers[j].weights[k] = np.loadtxt(SAVE_PATH + "/weights" + str(i) + str(j) + str(k) + ".out")
+                            self.layers[i].multilayer_feedforward.layers[j].biases[k] = np.loadtxt(SAVE_PATH + "/biases" + str(i) + str(j) + str(k) + ".out")
+                    self.layers[i].layer_normalizer1.GAMMA = np.loadtxt(SAVE_PATH + "/gamma" + str(i) + "1.out")
+                    self.layers[i].layer_normalizer1.BETA = np.loadtxt(SAVE_PATH + "/beta" + str(i) + "1.out")
+                    self.layers[i].layer_normalizer2.GAMMA = np.loadtxt(SAVE_PATH + "/gamma" + str(i) + "2.out")
+                    self.layers[i].layer_normalizer2.BETA = np.loadtxt(SAVE_PATH + "/beta" + str(i) + "2.out")
 
     def train_on_text(self, path):
         text = open(path).read().lower().replace(".", " . ").replace(",", " , ").replace("!", " ! ").replace("?", " ? ").replace("’", " ’ ").replace("-", " - ").replace(":", " : ").replace(";", " ; ").replace("(", " ( ").replace(")", " ) ").replace('"', ' " ').replace("'", " ' ")
@@ -116,10 +116,7 @@ class GPT:
         for i in range(1, len(words)):
             self.forward_train(" ".join(words[0 : i]))
             self.backward(words[i])
-
-            if i % 10 == 0:
-                print(self.generate_from_text("I ", 10))
-                print(np.diagonal(self.layers[0].attention.heads[0][0]))
+            print(self.tokenizer.prob_dist)
 
     def generate_from_text(self, input_text, iterations):
         output_text = input_text
@@ -128,9 +125,8 @@ class GPT:
         return output_text
 
 gpt_network = GPT()
-if os.path.isdir("./MING-GPT"):
-    gpt_network.load_layers()
-for i in range(10):
-    gpt_network.train_on_text("./train-text.txt")
-    print(gpt_network.generate_from_text("I", 100))
+gpt_network.load_layers_if_exist()
+for i in range(1):
+    gpt_network.train_on_text("./train-test.txt")
+    print(gpt_network.generate_from_text("He", 100))
     gpt_network.save_layers()

@@ -17,7 +17,7 @@ class Transformer:
         feedforwarded = self.multilayer_feedforward.forward_train(self.layer_normalizer2.forward_train(attentioned))
         return attentioned + feedforwarded
 
-    def backward(self, dC_dY, LEARNING_RATE):
-        dC_dZ = self.layer_normalizer2.backward(self.multilayer_feedforward.backward(dC_dY, LEARNING_RATE) + dC_dY, LEARNING_RATE)
-        dC_dX = self.layer_normalizer1.backward(self.attention.backward(dC_dZ, LEARNING_RATE), LEARNING_RATE)
+    def backward(self, dC_dY):
+        dC_dZ = self.layer_normalizer2.backward(self.multilayer_feedforward.backward(dC_dY) + dC_dY)
+        dC_dX = self.layer_normalizer1.backward(self.attention.backward(dC_dZ))
         return dC_dX
