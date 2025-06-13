@@ -1,21 +1,20 @@
 import os
-
 import numpy as np
 
 from Tokenizer import Tokenizer
 from Transformer import Transformer
 from Layer_Normalization import Layer_Normalization
-from config import SAVE_PATH
+from config import SAVE_PATH, TRAIN_PATH
 from Vocabularizer import Tokenize
+
+DIM_INPUT_VECTOR = 256
+NUM_HEAD = 4
+DIM_HEAD = 64
+NUM_TOKENS = 16
+DIM_QUERY = 32
 
 class GPT:
     def __init__(self):
-        DIM_INPUT_VECTOR = 256
-        NUM_HEAD = 4
-        DIM_HEAD = 64
-        NUM_TOKENS = 16
-        DIM_QUERY = 32
-
         self.tokenizer = Tokenizer(num_tokens=NUM_TOKENS, dim_input_vector=DIM_INPUT_VECTOR, dim_output_vector=DIM_INPUT_VECTOR)
 
         self.last_layer_normalizer = Layer_Normalization(num_tokens=NUM_TOKENS)
@@ -106,8 +105,8 @@ class GPT:
                     self.layers[i].layer_normalizer2.GAMMA = np.loadtxt(SAVE_PATH + "/gamma" + str(i) + "2.out")
                     self.layers[i].layer_normalizer2.BETA = np.loadtxt(SAVE_PATH + "/beta" + str(i) + "2.out")
 
-    def train_on_text(self, path):
-        text = open(path).read()
+    def train_on_text(self):
+        text = open(TRAIN_PATH).read()
         tokens = Tokenize(text, self.tokenizer.vocabulary, num_tokens=None)
 
         for i in range(1, len(tokens)):
@@ -115,7 +114,7 @@ class GPT:
             self.backward(tokens[i])
 
             if i % 100 == 0:
-                print(self.generate_from_text("He", 100))
+                print("TEST RUN: " + self.generate_from_text("He", 100))
 
     def generate_from_text(self, input_text, iterations):
         output_text = input_text
@@ -125,6 +124,8 @@ class GPT:
 
 gpt_network = GPT()
 gpt_network.load_layers_if_exist()
-for i in range(5):
-    gpt_network.train_on_text("./train-text.txt")
+
+EPOCHS = 5
+for i in range(EPOCHS):
+    gpt_network.train_on_text()
     gpt_network.save_layers()

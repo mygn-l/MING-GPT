@@ -1,24 +1,35 @@
-from Cost import Cross_Entropy_Back
+import math
 
-LEARNING_RATE = 0.001
-
+# Temperature
 TEMPERATURE = 1
 
+# The file from which to generate vocabulary
 VOCAB_PATH = "./train-text.txt"
-CODE_LENGTH = 3
+
+# The training file
+TRAIN_PATH = "./train-text.txt"
+
+# Vocabulary size
+VOCAB_SIZE = 500
+
+# Don't touch
+CODE_LENGTH = int(math.floor(math.log(VOCAB_SIZE, 10))) + 1
 CODE_LENGTH2 = 2 * CODE_LENGTH
 ZERO = "0" * CODE_LENGTH
-VOCAB_SIZE = 500
 EMPTY_TOKEN = "<empty>"
 UNK_TOKEN = "<unk>"
 
+# Model load and save path
 SAVE_PATH = "MING-GPT"
 
-COST_FUNCTION_DERIVATIVE = Cross_Entropy_Back
+# Adam optimizer
+LEARNING_RATE = 0.001 #normally between 0.001 and 0.0001
+EPSILON = 0.000000001 #do not change, used to avoid division by zero
+BETA1 = 0.9 #velocity preservation ratio
+BETA2 = 0.98 #acceleration preservation ratio
 
-EPSILON = 0.000000001
-BETA1 = 0.9
-BETA2 = 0.98
+# Dropout rate
+KEEP_PROB = 0.9 #normally 0.9
 
-KEEP_PROB = 0.1
+# Label smoothing
 SMOOTHING_FACTOR = 0.001
