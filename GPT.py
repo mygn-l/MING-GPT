@@ -119,7 +119,7 @@ class GPT:
     def generate_from_text(self, input_text, iterations):
         output_text = input_text
         for i in range(iterations):
-            output_text = output_text + " " + self.forward_train(output_text)
+            output_text = output_text + self.forward_train(output_text)
         return output_text
 
 gpt_network = GPT()
