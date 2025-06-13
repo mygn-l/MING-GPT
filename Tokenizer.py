@@ -1,11 +1,13 @@
 import numpy as np
 import random
 import math
+import json
 
 from Regularizer import Smooth_Label, Dropout
 from Activation import Softmax
 from Adam import Adam
-from config import TEMPERATURE, VOCAB_PATH, KEEP_PROB
+from config import TEMPERATURE, KEEP_PROB, SAVE_PATH
+from Vocabularizer import Tokenize
 
 class Tokenizer:
     def __init__(self, num_tokens, dim_input_vector, dim_output_vector):
@@ -17,8 +19,9 @@ class Tokenizer:
 
         self.embed_scaling = math.sqrt(dim_input_vector)
 
-        text = open(VOCAB_PATH).read()
-        self.vocabulary = list(set(text.split()))
+        VOCABULARY = json.loads(open(SAVE_PATH + "/vocabulary.json").read())
+
+        self.vocabulary = VOCABULARY
         self.embedding_matrix = np.random.rand(len(self.vocabulary), dim_input_vector) - 0.5
         self.unembedding_matrix = np.random.rand(dim_output_vector, len(self.vocabulary)) - 0.5
 
@@ -37,19 +40,14 @@ class Tokenizer:
         return self.vocabulary.index(token) if token in self.vocabulary else -1
 
     def embed_train(self, text):
-        words = text.split()
-        # Truncate or fill with empty
-        if len(words) > self.num_tokens - 1:
-            words = words[len(words) - (self.num_tokens - 1) : len(words)]
-        elif len(words) < self.num_tokens - 1:
-            words = ["<empty>"] * (self.num_tokens - 1 - len(words)) + words
+        tokens = Tokenize(text, self.vocabulary, self.num_tokens)
 
         embeddings = np.empty((self.num_tokens, self.dim_input_vector))
 
         self.used_word_indices = []
         # Find word embeddings
         for i in range(self.num_tokens - 1):
-            index = self.index_of_token(words[i])
+            index = self.index_of_token(tokens[i])
             self.used_word_indices.append(index)
             embeddings[i, :] = self.embedding_matrix[index, :]
 

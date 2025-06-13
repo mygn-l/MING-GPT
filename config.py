@@ -4,8 +4,14 @@ LEARNING_RATE = 0.001
 
 TEMPERATURE = 1
 
-#VOCAB_PATH = "./vocabulary-text.txt"
-VOCAB_PATH = "./voc-test.txt"
+VOCAB_PATH = "./train-text.txt"
+CODE_LENGTH = 3
+CODE_LENGTH2 = 2 * CODE_LENGTH
+ZERO = "0" * CODE_LENGTH
+VOCAB_SIZE = 500
+EMPTY_TOKEN = "<empty>"
+UNK_TOKEN = "<unk>"
+
 SAVE_PATH = "MING-GPT"
 
 COST_FUNCTION_DERIVATIVE = Cross_Entropy_Back
